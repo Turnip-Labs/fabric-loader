@@ -14,33 +14,17 @@
  * limitations under the License.
  */
 
-package net.fabricmc.loader.impl.game.minecraft.applet;
+package net.fabricmc.test;
 
-import java.io.File;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
-public final class AppletMain implements Runnable {
-	final String[] args;
-	private AppletMain(String[] args) {
-		this.args = args;
-	}
+import net.fabricmc.loader.impl.util.Localization;
 
-	public static File hookGameDir(File file) {
-		File proposed = AppletLauncher.gameDir;
-
-		if (proposed != null) {
-			return proposed;
-		} else {
-			return file;
-		}
-	}
-
-	public static void main(String[] args) {
-		java.awt.EventQueue.invokeLater(new AppletMain(args));
-	}
-
-	@Override
-	public void run() {
-		AppletFrame me = new AppletFrame("Minecraft", null);
-		me.launch(args);
+public class LocalizationTests {
+	@Test
+	public void formatRoot() {
+		Assertions.assertEquals("client", Localization.formatRoot("environment.client"));
+		Assertions.assertEquals("Install A, B.", Localization.formatRoot("resolution.solution.addMod", "A", "B"));
 	}
 }

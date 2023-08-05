@@ -21,6 +21,8 @@ import java.util.ListIterator;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import net.fabricmc.loader.impl.game.minecraft.applet.AppletLauncher;
+
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -74,6 +76,7 @@ public class EntrypointPatch extends GamePatch {
 		String gameEntrypoint = null;
 		boolean serverHasFile = true;
 		boolean isApplet = entrypoint.contains("Applet");
+		boolean isDirect = entrypoint.equals("net.minecraft.client.Minecraft");
 		ClassNode mainClass = readClass(classSource.apply(entrypoint));
 
 		if (mainClass == null) {
@@ -176,6 +179,9 @@ public class EntrypointPatch extends GamePatch {
 					gameEntrypoint = newGameInsn.owner.replace('/', '.');
 					serverHasFile = newGameInsn.desc.startsWith("(Ljava/io/File;");
 				}
+			}
+			if(gameEntrypoint == null && isDirect && type == EnvType.CLIENT){
+				gameEntrypoint = mainClass.name;
 			}
 		}
 
@@ -416,7 +422,7 @@ public class EntrypointPatch extends GamePatch {
 
 				patched = true;
 			}
-		} else if (type == EnvType.CLIENT && isApplet) {
+		} else if (type == EnvType.CLIENT && (isApplet || isDirect)) {
 			// Applet-side: field is private static File, run at end
 			// At the beginning, set file field (hook)
 			FieldNode runDirectory = findField(gameClass, (f) -> isStatic(f.access) && f.desc.equals("Ljava/io/File;"));
@@ -447,6 +453,10 @@ public class EntrypointPatch extends GamePatch {
 			} else {
 				// Indev and above.
 				ListIterator<AbstractInsnNode> it = gameConstructor.instructions.iterator();
+				if(isDirect){
+					//bamboozle the appletlauncher when no applet
+					AppletLauncher.gameDir = gameProvider.getLaunchDirectory().toFile();
+				}
 				moveAfter(it, Opcodes.INVOKESPECIAL); /* Object.init */
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
 				it.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/fabricmc/loader/impl/game/minecraft/applet/AppletMain", "hookGameDir", "(Ljava/io/File;)Ljava/io/File;", false));

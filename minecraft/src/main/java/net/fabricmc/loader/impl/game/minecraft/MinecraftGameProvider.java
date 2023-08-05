@@ -449,6 +449,13 @@ public class MinecraftGameProvider implements GameProvider {
 			targetClass = "net.fabricmc.loader.impl.game.minecraft.applet.AppletMain";
 		}
 
+		Log.debug(LogCategory.GAME_PROVIDER, "Launch arguments: "+ Arrays.toString(arguments.toArray()));
+
+		//direct launch args
+		String[] args = new String[2];
+		args[0] = arguments.getOrDefault("username",null);
+		args[1] = arguments.getOrDefault("session","");
+
 		MethodHandle invoker;
 
 		try {
@@ -459,7 +466,11 @@ public class MinecraftGameProvider implements GameProvider {
 		}
 
 		try {
-			invoker.invokeExact(arguments.toArray());
+			if(targetClass.equals("net.minecraft.client.Minecraft")){ //direct launch
+				invoker.invokeExact(args);
+			} else {
+				invoker.invokeExact(arguments.toArray());
+			}
 		} catch (Throwable t) {
 			throw FormattedException.ofLocalized("exception.minecraft.generic", t);
 		}

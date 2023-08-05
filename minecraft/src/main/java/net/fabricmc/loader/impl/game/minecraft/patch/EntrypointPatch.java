@@ -21,6 +21,9 @@ import java.util.ListIterator;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import net.fabricmc.loader.impl.game.minecraft.applet.AppletLauncher;
+
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
@@ -61,7 +64,7 @@ public class EntrypointPatch extends GamePatch {
 	}
 
 	@Override
-	public void process(FabricLauncher launcher, Function<String, ClassNode> classSource, Consumer<ClassNode> classEmitter) {
+	public void process(FabricLauncher launcher, Function<String, ClassReader> classSource, Consumer<ClassNode> classEmitter) {
 		EnvType type = launcher.getEnvironmentType();
 		String entrypoint = launcher.getEntrypoint();
 		Version gameVersion = getGameVersion();
@@ -73,7 +76,8 @@ public class EntrypointPatch extends GamePatch {
 		String gameEntrypoint = null;
 		boolean serverHasFile = true;
 		boolean isApplet = entrypoint.contains("Applet");
-		ClassNode mainClass = classSource.apply(entrypoint);
+		boolean isDirect = entrypoint.equals("net.minecraft.client.Minecraft");
+		ClassNode mainClass = readClass(classSource.apply(entrypoint));
 
 		if (mainClass == null) {
 			throw new RuntimeException("Could not load main class " + entrypoint + "!");
@@ -176,6 +180,9 @@ public class EntrypointPatch extends GamePatch {
 					serverHasFile = newGameInsn.desc.startsWith("(Ljava/io/File;");
 				}
 			}
+			if(gameEntrypoint == null && isDirect && type == EnvType.CLIENT){
+				gameEntrypoint = mainClass.name;
+			}
 		}
 
 		if (gameEntrypoint == null) {
@@ -188,7 +195,7 @@ public class EntrypointPatch extends GamePatch {
 		if (gameEntrypoint.equals(entrypoint) || is20w22aServerOrHigher) {
 			gameClass = mainClass;
 		} else {
-			gameClass = classSource.apply(gameEntrypoint);
+			gameClass = readClass(classSource.apply(gameEntrypoint));
 			if (gameClass == null) throw new RuntimeException("Could not load game class " + gameEntrypoint + "!");
 		}
 
@@ -415,7 +422,7 @@ public class EntrypointPatch extends GamePatch {
 
 				patched = true;
 			}
-		} else if (type == EnvType.CLIENT && isApplet) {
+		} else if (type == EnvType.CLIENT && (isApplet || isDirect)) {
 			// Applet-side: field is private static File, run at end
 			// At the beginning, set file field (hook)
 			FieldNode runDirectory = findField(gameClass, (f) -> isStatic(f.access) && f.desc.equals("Ljava/io/File;"));
@@ -446,6 +453,10 @@ public class EntrypointPatch extends GamePatch {
 			} else {
 				// Indev and above.
 				ListIterator<AbstractInsnNode> it = gameConstructor.instructions.iterator();
+				if(isDirect){
+					//bamboozle the appletlauncher when no applet
+					AppletLauncher.gameDir = gameProvider.getLaunchDirectory().toFile();
+				}
 				moveAfter(it, Opcodes.INVOKESPECIAL); /* Object.init */
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
 				it.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/fabricmc/loader/impl/game/minecraft/applet/AppletMain", "hookGameDir", "(Ljava/io/File;)Ljava/io/File;", false));
@@ -526,22 +537,22 @@ public class EntrypointPatch extends GamePatch {
 		}
 	}
 
-	private boolean hasSuperClass(String cls, String superCls, Function<String, ClassNode> classSource) {
+	private boolean hasSuperClass(String cls, String superCls, Function<String, ClassReader> classSource) {
 		if (cls.contains("$") || (!cls.startsWith("net/minecraft") && cls.contains("/"))) {
 			return false;
 		}
 
-		ClassNode classNode = classSource.apply(cls);
+		ClassReader reader = classSource.apply(cls);
 
-		return classNode != null && classNode.superName.equals(superCls);
+		return reader != null && reader.getSuperName().equals(superCls);
 	}
 
-	private boolean hasStrInMethod(String cls, String methodName, String methodDesc, String str, Function<String, ClassNode> classSource) {
+	private boolean hasStrInMethod(String cls, String methodName, String methodDesc, String str, Function<String, ClassReader> classSource) {
 		if (cls.contains("$") || (!cls.startsWith("net/minecraft") && cls.contains("/"))) {
 			return false;
 		}
 
-		ClassNode node = classSource.apply(cls);
+		ClassNode node = readClass(classSource.apply(cls));
 		if (node == null) return false;
 
 		for (MethodNode method : node.methods) {

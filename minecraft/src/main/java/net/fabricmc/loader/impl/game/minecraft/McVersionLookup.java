@@ -132,7 +132,7 @@ public final class McVersionLookup {
 			}
 
 			// version-like String constant used in MinecraftServer.run or another MinecraftServer method
-			if ((is = cp.getInputStream("net/minecraft/server/MinecraftServer.class")) != null && fromAnalyzer(is, new MethodConstantVisitor("run"), builder)) {
+			if ((is = cp.getInputStream("net/minecraft/server/MinecraftServer.class")) != null && (fromAnalyzer(is, new MethodConstantVisitor("run"), builder) || fromAnalyzer(is, new MethodConstantRetVisitor("getMinecraftVersion"), builder))) {
 				return;
 			}
 

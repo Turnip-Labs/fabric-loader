@@ -578,7 +578,7 @@ public class EntrypointPatch extends GamePatch {
 
 	private Version getGameVersion() {
 		try {
-			return VersionParser.parseSemantic(gameProvider.getNormalizedGameVersion());
+			return VersionParser.parse(gameProvider.getNormalizedGameVersion(),false);
 		} catch (VersionParsingException e) {
 			throw new RuntimeException(e);
 		}

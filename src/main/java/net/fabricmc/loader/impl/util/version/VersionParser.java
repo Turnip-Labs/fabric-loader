@@ -31,6 +31,7 @@ public final class VersionParser {
 		try {
 			version = new SemanticVersionImpl(s, storeX);
 		} catch (VersionParsingException e) {
+			System.err.println(e.getMessage());
 			version = new StringVersion(s);
 		}
 

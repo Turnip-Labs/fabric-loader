@@ -49,7 +49,7 @@ import net.fabricmc.loader.impl.util.version.VersionPredicateParser;
 public final class McVersionLookup {
 	private static final Pattern VERSION_PATTERN = Pattern.compile(
 			"0\\.\\d+(\\.\\d+)?a?(_\\d+)?|" // match classic versions first: 0.1.2a_34
-			+ "\\d+\\.\\d+(\\.\\d+)?(-pre\\d+| Pre-?[Rr]elease \\d+)?|" // modern non-snapshot: 1.2, 1.2.3, optional -preN or " Pre-Release N" suffix
+			+ "\\d+\\.\\d+(\\.\\d+)?(-pre\\d+| Pre-?[Rr]elease \\d.?+)?|" // modern non-snapshot: 1.2, 1.2.3, optional -preN or " Pre-Release N" suffix
 			+ "\\d+\\.\\d+(\\.\\d+)?(-rc\\d+| [Rr]elease Candidate \\d+)?|" // 1.16+ Release Candidate
 			+ "\\d+w\\d+[a-z]|" // modern snapshot: 12w34a
 			+ "[a-c]\\d\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?|" // alpha/beta a1.2.3_45
@@ -60,7 +60,7 @@ public final class McVersionLookup {
 			+ "(.*[Ee]xperimental [Ss]napshot )(\\d+)" // Experimental versions.
 			);
 	private static final Pattern RELEASE_PATTERN = Pattern.compile("\\d+\\.\\d+(\\.\\d+)?");
-	private static final Pattern PRE_RELEASE_PATTERN = Pattern.compile(".+(?:-pre| Pre-?[Rr]elease )(\\d+)");
+	private static final Pattern PRE_RELEASE_PATTERN = Pattern.compile(".+(?:-pre| Pre-?[Rr]elease )(\\d.?+)");
 	private static final Pattern RELEASE_CANDIDATE_PATTERN = Pattern.compile(".+(?:-rc| [Rr]elease Candidate )(\\d+)");
 	private static final Pattern SNAPSHOT_PATTERN = Pattern.compile("(?:Snapshot )?(\\d+)w0?(0|[1-9]\\d*)([a-z])");
 	private static final Pattern EXPERIMENTAL_PATTERN = Pattern.compile("(?:.*[Ee]xperimental [Ss]napshot )(\\d+)");

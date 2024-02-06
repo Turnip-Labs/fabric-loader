@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -73,7 +74,7 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 
 	public static final int ASM_VERSION = Opcodes.ASM9;
 
-	public static final String VERSION = "0.14.24-babric.1";
+	public static final String VERSION = "0.15.6-babric.1";
 	public static final String MOD_ID = "fabricloader";
 
 	public static final String CACHE_DIR_NAME = ".fabric"; // relative to game dir
@@ -207,7 +208,7 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 
 		ModDiscoverer discoverer = new ModDiscoverer(versionOverrides, depOverrides);
 		discoverer.addCandidateFinder(new ClasspathModCandidateFinder());
-		discoverer.addCandidateFinder(new DirectoryModCandidateFinder(gameDir.resolve("mods"), remapRegularMods));
+		discoverer.addCandidateFinder(new DirectoryModCandidateFinder(getModsDirectory0(), remapRegularMods));
 		discoverer.addCandidateFinder(new ArgumentModCandidateFinder(remapRegularMods));
 
 		Map<String, Set<ModCandidate>> envDisabledMods = new HashMap<>();
@@ -398,10 +399,12 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 	@Override
 	public MappingResolver getMappingResolver() {
 		if (mappingResolver == null) {
-			mappingResolver = new MappingResolverImpl(
-					FabricLauncherBase.getLauncher().getMappingConfiguration()::getMappings,
-					FabricLauncherBase.getLauncher().getTargetNamespace()
-					);
+			final String targetNamespace = FabricLauncherBase.getLauncher().getTargetNamespace();
+
+			mappingResolver = new LazyMappingResolver(() -> new MappingResolverImpl(
+				FabricLauncherBase.getLauncher().getMappingConfiguration().getMappings(),
+				targetNamespace
+			), targetNamespace);
 		}
 
 		return mappingResolver;
@@ -590,6 +593,13 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 	@Override
 	public String[] getLaunchArguments(boolean sanitize) {
 		return getGameProvider().getLaunchArguments(sanitize);
+	}
+
+	@Override
+	protected Path getModsDirectory0() {
+		String directory = System.getProperty(SystemProperties.MODS_FOLDER);
+
+		return directory != null ? Paths.get(directory) : gameDir.resolve("mods");
 	}
 
 	/**

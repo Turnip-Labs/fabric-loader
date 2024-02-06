@@ -1,3 +1,6 @@
+import net.fabricmc.loom.build.nesting.JarNester
+import org.slf4j.LoggerFactory
+
 buildscript {
 	dependencies {
 		classpath 'org.kohsuke:github-api:1.135'
@@ -39,11 +42,16 @@ allprojects {
 		}
 		mavenCentral() {
 			content {
-				// Force ASM to come from the fabric maven.
-				// This ensures that the ASM version has been mirrored for use by the launcher/installer.
+				// Force ASM and ME to come from the fabric maven.
+				// This ensures that the version has been mirrored for use by the launcher/installer.
 				excludeGroupByRegex "org.ow2.asm"
+				excludeGroupByRegex "io.github.llamalad7"
 			}
 		}
+	}
+
+	dependencies {
+		compileOnly 'org.jetbrains:annotations:23.0.0'
 	}
 }
 
@@ -54,31 +62,63 @@ sourceSets {
 }
 
 configurations {
-	include
+	include {
+		transitive = false
+	}
 
 	implementation {
 		extendsFrom include
 	}
+
+	installer {
+		transitive = false
+	}
+	installerLaunchWrapper {
+		transitive = false
+		extendsFrom installer
+	}
+	development {
+		transitive = false
+	}
+
+	api {
+		extendsFrom installer
+		extendsFrom development
+	}
 }
+
+repositories {
+	maven {
+		name = 'Mojang'
+		url = 'https://libraries.minecraft.net/'
+		content {
+			includeGroup "net.minecraft"
+		}
+	}
+}
+
 
 dependencies {
 	// fabric-loader dependencies
-	api "org.ow2.asm:asm:${project.asm_version}"
-	api "org.ow2.asm:asm-analysis:${project.asm_version}"
-	api "org.ow2.asm:asm-commons:${project.asm_version}"
-	api "org.ow2.asm:asm-tree:${project.asm_version}"
-	api "org.ow2.asm:asm-util:${project.asm_version}"
+	installer "org.ow2.asm:asm:${project.asm_version}"
+	installer "org.ow2.asm:asm-analysis:${project.asm_version}"
+	installer "org.ow2.asm:asm-commons:${project.asm_version}"
+	installer "org.ow2.asm:asm-tree:${project.asm_version}"
+	installer "org.ow2.asm:asm-util:${project.asm_version}"
+	installer "net.fabricmc:sponge-mixin:${project.mixin_version}"
+	installerLaunchWrapper "net.minecraft:launchwrapper:1.12"
 
-	api("net.fabricmc:sponge-mixin:${project.mixin_version}") {
-		exclude module: 'launchwrapper'
-		exclude module: 'guava'
-	}
-	api 'net.fabricmc:tiny-mappings-parser:0.3.0+build.17'
-	api 'net.fabricmc:tiny-remapper:0.8.2'
-	api 'net.fabricmc:access-widener:2.1.0'
-
+	// impl dependencies
 	include 'org.ow2.sat4j:org.ow2.sat4j.core:2.3.6'
 	include 'org.ow2.sat4j:org.ow2.sat4j.pb:2.3.6'
+	include "net.fabricmc:tiny-remapper:0.10.0"
+	include "net.fabricmc:access-widener:2.1.0"
+	include ('net.fabricmc:mapping-io:0.5.0') {
+		// Mapping-io depends on ASM, dont bundle
+		transitive = false
+	}
+
+	development "io.github.llamalad7:mixinextras-fabric:$mixin_extras_version"
 
 	testCompileOnly 'org.jetbrains:annotations:23.0.0'
 
@@ -86,6 +126,9 @@ dependencies {
 	testImplementation('org.junit.jupiter:junit-jupiter:5.9.2')
 	testRuntimeOnly('org.junit.platform:junit-platform-launcher')
 }
+
+apply from: rootProject.file('gradle/installer-json.gradle')
+apply from: rootProject.file('gradle/launcher.gradle')
 
 processResources {
 	inputs.property "version", project.version
@@ -156,10 +199,19 @@ task fatJar(type: ShadowJar, dependsOn: getSat4jAbout) {
 	configurations = [project.configurations.include]
 
 	relocate 'org.sat4j', 'net.fabricmc.loader.impl.lib.sat4j'
+	relocate 'net.fabricmc.accesswidener', 'net.fabricmc.loader.impl.lib.accesswidener'
+	relocate 'net.fabricmc.tinyremapper', 'net.fabricmc.loader.impl.lib.tinyremapper'
+	relocate 'net.fabricmc.mappingio', 'net.fabricmc.loader.impl.lib.mappingio'
 
 	exclude 'about.html'
 	exclude 'sat4j.version'
 	exclude 'META-INF/maven/org.ow2.sat4j/*/**'
+	exclude 'META-INF/*.RSA'
+	exclude 'META-INF/*.SF'
+
+	doLast {
+		JarNester.nestJars(project.configurations.development.files, archiveFile.get().asFile, LoggerFactory.getLogger("JiJ"))
+	}
 
 	outputs.upToDateWhen { false }
 }
@@ -244,7 +296,7 @@ javadoc {
 		links(
 				'https://asm.ow2.io/javadoc/',
 				'https://docs.oracle.com/javase/8/docs/api/',
-				'https://logging.apache.org/log4j/2.x/log4j-api/apidocs/'
+				'https://logging.apache.org/log4j/2.x/javadoc/log4j-api/'
 		)
 		// Disable the crazy super-strict doclint tool in Java 8
 		addStringOption('Xdoclint:none', '-quiet')

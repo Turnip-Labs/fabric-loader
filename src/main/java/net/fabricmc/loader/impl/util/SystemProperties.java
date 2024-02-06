@@ -32,6 +32,8 @@ public final class SystemProperties {
 	public static final String LOG_FILE = "fabric.log.file";
 	// minimum log level for builtin log handler
 	public static final String LOG_LEVEL = "fabric.log.level";
+	// a path to a directory to replace the default mod search directory
+	public static final String MODS_FOLDER = "fabric.modsFolder";
 	// additional mods to load (path separator separated paths, @ prefix for meta-file with each line referencing an actual file)
 	public static final String ADD_MODS = "fabric.addMods";
 	// a comma-separated list of mod ids to disable, even if they're discovered. mostly useful for unit testing.
@@ -64,6 +66,8 @@ public final class SystemProperties {
 	public static final String DEBUG_RESOLUTION_TIMEOUT = "fabric.debug.resolutionTimeout";
 	// replace mod versions (modA:versionA,modB:versionB,...)
 	public static final String DEBUG_REPLACE_VERSION = "fabric.debug.replaceVersion";
+	// deobfuscate the game jar with the classpath
+	public static final String DEBUG_DEOBFUSCATE_WITH_CLASSPATH = "fabric.debug.deobfuscateWithClasspath";
 	// whether fabric loader is running in a unit test, this affects logging classpath setup
 	public static final String UNIT_TEST = "fabric.unitTest";
 

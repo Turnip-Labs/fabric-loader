@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -31,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.objectweb.asm.Opcodes;
@@ -60,6 +62,7 @@ import net.fabricmc.loader.impl.metadata.EntrypointMetadata;
 import net.fabricmc.loader.impl.metadata.LoaderModMetadata;
 import net.fabricmc.loader.impl.metadata.VersionOverrides;
 import net.fabricmc.loader.impl.util.DefaultLanguageAdapter;
+import net.fabricmc.loader.impl.util.ExceptionUtil;
 import net.fabricmc.loader.impl.util.LoaderUtil;
 import net.fabricmc.loader.impl.util.SystemProperties;
 import net.fabricmc.loader.impl.util.log.Log;
@@ -71,7 +74,7 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 
 	public static final int ASM_VERSION = Opcodes.ASM9;
 
-	public static final String VERSION = "0.14.19-babric.3-bta";
+	public static final String VERSION = "0.15.6-babric.4-bta";
 	public static final String MOD_ID = "fabricloader";
 
 	public static final String CACHE_DIR_NAME = ".fabric"; // relative to game dir
@@ -205,7 +208,7 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 
 		ModDiscoverer discoverer = new ModDiscoverer(versionOverrides, depOverrides);
 		discoverer.addCandidateFinder(new ClasspathModCandidateFinder());
-		discoverer.addCandidateFinder(new DirectoryModCandidateFinder(gameDir.resolve("mods"), remapRegularMods));
+		discoverer.addCandidateFinder(new DirectoryModCandidateFinder(getModsDirectory0(), remapRegularMods));
 		discoverer.addCandidateFinder(new ArgumentModCandidateFinder(remapRegularMods));
 
 		Map<String, Set<ModCandidate>> envDisabledMods = new HashMap<>();
@@ -365,12 +368,43 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 	}
 
 	@Override
+	public <T> void invokeEntrypoints(String key, Class<T> type, Consumer<? super T> invoker) {
+		if (!hasEntrypoints(key)) {
+			Log.debug(LogCategory.ENTRYPOINT, "No subscribers for entrypoint '%s'", key);
+			return;
+		}
+
+		RuntimeException exception = null;
+		Collection<EntrypointContainer<T>> entrypoints = FabricLoaderImpl.INSTANCE.getEntrypointContainers(key, type);
+
+		Log.debug(LogCategory.ENTRYPOINT, "Iterating over entrypoint '%s'", key);
+
+		for (EntrypointContainer<T> container : entrypoints) {
+			try {
+				invoker.accept(container.getEntrypoint());
+			} catch (Throwable t) {
+				exception = ExceptionUtil.gatherExceptions(t,
+						exception,
+						exc -> new RuntimeException(String.format("Could not execute entrypoint stage '%s' due to errors, provided by '%s'!",
+								key, container.getProvider().getMetadata().getId()),
+								exc));
+			}
+		}
+
+		if (exception != null) {
+			throw exception;
+		}
+	}
+
+	@Override
 	public MappingResolver getMappingResolver() {
 		if (mappingResolver == null) {
-			mappingResolver = new MappingResolverImpl(
-					FabricLauncherBase.getLauncher().getMappingConfiguration()::getMappings,
-					FabricLauncherBase.getLauncher().getTargetNamespace()
-					);
+			final String targetNamespace = FabricLauncherBase.getLauncher().getTargetNamespace();
+
+			mappingResolver = new LazyMappingResolver(() -> new MappingResolverImpl(
+				FabricLauncherBase.getLauncher().getMappingConfiguration().getMappings(),
+				targetNamespace
+			), targetNamespace);
 		}
 
 		return mappingResolver;
@@ -475,7 +509,7 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 			if (path == null) throw new RuntimeException(String.format("Missing accessWidener file %s from mod %s", accessWidener, modContainer.getMetadata().getId()));
 
 			try (BufferedReader reader = Files.newBufferedReader(path)) {
-				accessWidenerReader.read(reader, getMappingResolver().getCurrentRuntimeNamespace());
+				accessWidenerReader.read(reader, FabricLauncherBase.getLauncher().getTargetNamespace());
 			} catch (Exception e) {
 				throw new RuntimeException("Failed to read accessWidener file from mod " + modMetadata.getId(), e);
 			}
@@ -559,6 +593,13 @@ public final class FabricLoaderImpl extends net.fabricmc.loader.FabricLoader {
 	@Override
 	public String[] getLaunchArguments(boolean sanitize) {
 		return getGameProvider().getLaunchArguments(sanitize);
+	}
+
+	@Override
+	protected Path getModsDirectory0() {
+		String directory = System.getProperty(SystemProperties.MODS_FOLDER);
+
+		return directory != null ? Paths.get(directory) : gameDir.resolve("mods");
 	}
 
 	/**

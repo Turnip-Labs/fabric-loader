@@ -76,6 +76,14 @@ dependencies {
 	// Include the external libraries on the classpath
 	def installerJson = new JsonSlurper().parse(rootProject.file("src/main/resources/fabric-installer.json"))
 	installerJson.libraries.common.each {
+		if (it.rules) {
+			if (it.rules.size() == 1 && it.rules.first().action == "disallow") {
+				return
+			}
+
+			throw new UnsupportedOperationException("Rules are not implemented yet")	
+		}
+
 		productionRuntime it.name
 	}
 

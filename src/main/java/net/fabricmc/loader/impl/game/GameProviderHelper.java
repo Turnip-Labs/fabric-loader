@@ -267,8 +267,10 @@ public final class GameProviderHelper {
 	}
 
 	private static void deobfuscate0(List<Path> inputFiles, List<Path> outputFiles, List<Path> tmpFiles, MappingTree mappings, String targetNamespace, FabricLauncher launcher) throws IOException {
+		String sidedOrigin = launcher.getEnvironmentType().name().toLowerCase();
+		String originNamespace = mappings.getDstNamespaces().contains(sidedOrigin) ? sidedOrigin : "official";
 		TinyRemapper remapper = TinyRemapper.newRemapper()
-				.withMappings(TinyRemapperMappingsHelper.create(mappings, "official", targetNamespace))
+				.withMappings(TinyRemapperMappingsHelper.create(mappings, originNamespace, targetNamespace))
 				.rebuildSourceFilenames(true)
 				.build();
 

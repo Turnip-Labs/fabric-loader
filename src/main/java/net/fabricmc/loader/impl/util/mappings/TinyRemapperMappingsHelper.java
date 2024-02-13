@@ -20,7 +20,8 @@ import net.fabricmc.mappingio.tree.MappingTree;
 import net.fabricmc.tinyremapper.IMappingProvider;
 
 public class TinyRemapperMappingsHelper {
-	private TinyRemapperMappingsHelper() { }
+	private TinyRemapperMappingsHelper() {
+	}
 
 	private static IMappingProvider.Member memberOf(String className, String memberName, String descriptor) {
 		return new IMappingProvider.Member(className, memberName, descriptor);
@@ -32,7 +33,12 @@ public class TinyRemapperMappingsHelper {
 			final int toId = mappings.getNamespaceId(to);
 
 			for (MappingTree.ClassMapping classDef : mappings.getClasses()) {
-				final String className = classDef.getName(fromId);
+				String className = classDef.getName(fromId);
+
+				if (className == null) {
+					className = classDef.getSrcName();
+				}
+
 				String dstName = classDef.getName(toId);
 
 				if (dstName == null) {
@@ -42,11 +48,20 @@ public class TinyRemapperMappingsHelper {
 				acceptor.acceptClass(className, dstName);
 
 				for (MappingTree.FieldMapping field : classDef.getFields()) {
+					if (field.getName(fromId) == null) {
+						continue;
+					}
+
 					acceptor.acceptField(memberOf(className, field.getName(fromId), field.getDesc(fromId)), field.getName(toId));
 				}
 
 				for (MappingTree.MethodMapping method : classDef.getMethods()) {
 					IMappingProvider.Member methodIdentifier = memberOf(className, method.getName(fromId), method.getDesc(fromId));
+
+					if (methodIdentifier.name == null) {
+						continue;
+					}
+
 					acceptor.acceptMethod(methodIdentifier, method.getName(toId));
 				}
 			}

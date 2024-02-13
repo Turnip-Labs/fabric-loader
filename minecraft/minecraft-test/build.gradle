@@ -1,15 +1,13 @@
 apply plugin: "fabric-loom"
 
-sourceCompatibility = JavaVersion.VERSION_17
-targetCompatibility = JavaVersion.VERSION_17
-
 loom {
 	runConfigs.configureEach {
 		ideConfigGenerated = true
+		property("fabric.debug.replaceVersion", "fabricloader:$version")
 	}
 }
 
-def minecraft_version = "1.19.3";
+def minecraft_version = "1.20.2"
 
 repositories {
 	mavenCentral()
@@ -17,7 +15,7 @@ repositories {
 
 dependencies {
 	minecraft "com.mojang:minecraft:${minecraft_version}"
-	mappings "net.fabricmc:yarn:${minecraft_version}+build.3:v2"
+	mappings "net.fabricmc:yarn:${minecraft_version}+build.1:v2"
 
 	implementation project(":minecraft")
 	implementation project(":minecraft").sourceSets.main.output
@@ -38,12 +36,19 @@ dependencies {
 		exclude module: 'launchwrapper'
 		exclude module: 'guava'
 	}
+	annotationProcessor "io.github.llamalad7:mixinextras-fabric:$mixin_extras_version"
 
 	testImplementation project(":junit")
+	testRuntimeOnly('org.junit.platform:junit-platform-launcher')
 }
 
 test {
 	useJUnitPlatform()
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
 }
 
 tasks.withType(JavaCompile).configureEach {
@@ -51,16 +56,18 @@ tasks.withType(JavaCompile).configureEach {
 	it.options.release = 17
 }
 
-import net.fabricmc.loom.util.OperatingSystem
+import net.fabricmc.loom.util.Platform
 import groovy.json.JsonSlurper
 
 configurations {
 	productionRuntime {
 		extendsFrom configurations.minecraftLibraries
 		extendsFrom configurations.loaderLibraries
-		extendsFrom configurations.minecraftRuntimeOnlyLibraries
+		extendsFrom configurations.minecraftRuntimeLibraries
 	}
-	productionRuntimeMods
+	productionRuntimeMods {
+		transitive = false
+	}
 }
 
 dependencies {
@@ -69,18 +76,26 @@ dependencies {
 	// Include the external libraries on the classpath
 	def installerJson = new JsonSlurper().parse(rootProject.file("src/main/resources/fabric-installer.json"))
 	installerJson.libraries.common.each {
+		if (it.rules) {
+			if (it.rules.size() == 1 && it.rules.first().action == "disallow") {
+				return
+			}
+
+			throw new UnsupportedOperationException("Rules are not implemented yet")	
+		}
+
 		productionRuntime it.name
 	}
 
 	// Use Fabric's auto client test
-	productionRuntimeMods "net.fabricmc.fabric-api:fabric-api:0.69.1+1.19.3"
-	productionRuntimeMods "net.fabricmc.fabric-api:fabric-api:0.69.1+1.19.3:testmod"
+	productionRuntimeMods "net.fabricmc.fabric-api:fabric-api:0.89.3+1.20.2"
+	productionRuntimeMods "net.fabricmc.fabric-api:fabric-api:0.89.3+1.20.2:testmod"
 }
 
 def loaderJarTask = project(":").tasks.proguardJar
 
 // This is very far beyond loom's API if you copy this, you're on your own.
-task runProductionAutoTestClient(type: JavaExec, dependsOn: [loaderJarTask]) {
+task runProductionAutoTestClient(type: JavaExec, dependsOn: [loaderJarTask, remapJar]) {
 	classpath.from configurations.productionRuntime
 	classpath.from loaderJarTask
 	mainClass = "net.fabricmc.loader.impl.launch.knot.KnotClient"
@@ -100,13 +115,16 @@ task runProductionAutoTestClient(type: JavaExec, dependsOn: [loaderJarTask]) {
 			"--gameDir", workingDir.absolutePath
 		)
 
-		if (OperatingSystem.CURRENT_OS == OperatingSystem.MAC_OS) {
+		if (Platform.CURRENT.operatingSystem.isMacOS()) {
 			jvmArgs(
 				"-XstartOnFirstThread"
 			)
 		}
 
-		def mods = configurations.productionRuntimeMods.files.join(File.pathSeparator)
+		def modFiles = []
+		modFiles.addAll configurations.productionRuntimeMods.files
+		modFiles.add remapJar.archiveFile.get().asFile
+		def mods = modFiles.join(File.pathSeparator)
 
 		jvmArgs(
 			"-Dfabric.addMods=${mods}",

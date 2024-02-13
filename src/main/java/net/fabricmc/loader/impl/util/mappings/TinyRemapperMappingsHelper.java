@@ -16,49 +16,53 @@
 
 package net.fabricmc.loader.impl.util.mappings;
 
-import net.fabricmc.mapping.tree.ClassDef;
-import net.fabricmc.mapping.tree.FieldDef;
-import net.fabricmc.mapping.tree.MethodDef;
-import net.fabricmc.mapping.tree.TinyTree;
+import net.fabricmc.mappingio.tree.MappingTree;
 import net.fabricmc.tinyremapper.IMappingProvider;
 
 public class TinyRemapperMappingsHelper {
-	private TinyRemapperMappingsHelper() { }
+	private TinyRemapperMappingsHelper() {
+	}
 
 	private static IMappingProvider.Member memberOf(String className, String memberName, String descriptor) {
 		return new IMappingProvider.Member(className, memberName, descriptor);
 	}
 
-	public static IMappingProvider create(TinyTree mappings, String from, String to) {
+	public static IMappingProvider create(MappingTree mappings, String from, String to) {
 		return (acceptor) -> {
-			for (ClassDef classDef : mappings.getClasses()) {
-				String className;
+			final int fromId = mappings.getNamespaceId(from);
+			final int toId = mappings.getNamespaceId(to);
 
-				try {
-					className = classDef.getRawName(from);
-				} catch (ArrayIndexOutOfBoundsException e) {
-					// TODO get rid of try-catch by using mapping-io
-					className = classDef.getRawName(to);
+			for (MappingTree.ClassMapping classDef : mappings.getClasses()) {
+				String className = classDef.getName(fromId);
+
+				if (className == null) {
+					className = classDef.getSrcName();
 				}
 
-				String dstName;
+				String dstName = classDef.getName(toId);
 
-				try {
-					dstName = classDef.getRawName(to);
-				} catch (ArrayIndexOutOfBoundsException e) {
-					// TODO get rid of try-catch by using mapping-io
+				if (dstName == null) {
 					dstName = className;
 				}
 
 				acceptor.acceptClass(className, dstName);
 
-				for (FieldDef field : classDef.getFields()) {
-					acceptor.acceptField(memberOf(className, field.getName(from), field.getDescriptor(from)), field.getName(to));
+				for (MappingTree.FieldMapping field : classDef.getFields()) {
+					if (field.getName(fromId) == null) {
+						continue;
+					}
+
+					acceptor.acceptField(memberOf(className, field.getName(fromId), field.getDesc(fromId)), field.getName(toId));
 				}
 
-				for (MethodDef method : classDef.getMethods()) {
-					IMappingProvider.Member methodIdentifier = memberOf(className, method.getName(from), method.getDescriptor(from));
-					acceptor.acceptMethod(methodIdentifier, method.getName(to));
+				for (MappingTree.MethodMapping method : classDef.getMethods()) {
+					IMappingProvider.Member methodIdentifier = memberOf(className, method.getName(fromId), method.getDesc(fromId));
+
+					if (methodIdentifier.name == null) {
+						continue;
+					}
+
+					acceptor.acceptMethod(methodIdentifier, method.getName(toId));
 				}
 			}
 		};

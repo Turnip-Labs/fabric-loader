@@ -7,14 +7,6 @@
         ],
         "common": [
             {
-                "name": "org.ow2.asm:asm-all:*",
-                "rules": [
-                    {
-                        "action": "disallow"
-                    }
-                ]
-            },
-            {
                 "name": "org.ow2.asm:asm:9.6",
                 "url": "https://maven.fabricmc.net/",
                 "md5": "6f8bccf756f170d4185bb24c8c2d2020",

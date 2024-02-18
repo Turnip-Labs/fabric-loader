@@ -57,17 +57,7 @@ abstract class GenerateInstallerJsonTask extends DefaultTask {
 			min_java_version: 8,
 			libraries: [
 				client: [],
-				common: [
-					// Remove <6.0 asm that is present on old versions
-					[
-						name: "org.ow2.asm:asm-all:*",
-						rules: [
-							[
-								action: "disallow"
-							],
-						]
-					]
-				],
+				common: [],
 				server: [],
 				development: [],
 			]

@@ -54,12 +54,14 @@ public final class McVersionLookup {
 			+ "\\d+w\\d+[a-z]|" // modern snapshot: 12w34a
 			+ "[a-c]\\d\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?|" // alpha/beta a1.2.3_45
 			+ "(Alpha|Beta) v?\\d+\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?|" // long alpha/beta names: Alpha v1.2.3_45
+			+ "v?\\d+\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?|" // long release names: 1.2.3_45
 			+ "Inf?dev (0\\.31 )?\\d+(-\\d+)?|" // long indev/infdev names: Infdev 12345678-9
 			+ "(rd|inf)-\\d+|" // early rd-123, inf-123
 			+ "1\\.RV-Pre1|3D Shareware v1\\.34|23w13a_or_b|" // odd exceptions
 			+ "(.*[Ee]xperimental [Ss]napshot )(\\d+)" // Experimental versions.
 			);
 	private static final Pattern RELEASE_PATTERN = Pattern.compile("\\d+\\.\\d+(\\.\\d+)?");
+	private static final Pattern LONG_RELEASE_PATTERN = Pattern.compile("v?\\d+\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?|");
 	private static final Pattern PRE_RELEASE_PATTERN = Pattern.compile(".+(?:-pre| Pre-?[Rr]elease )(\\d.?+)");
 	private static final Pattern RELEASE_CANDIDATE_PATTERN = Pattern.compile(".+(?:-rc| [Rr]elease Candidate )(\\d+)");
 	private static final Pattern SNAPSHOT_PATTERN = Pattern.compile("(?:Snapshot )?(\\d+)w0?(0|[1-9]\\d*)([a-z])");
@@ -274,6 +276,7 @@ public final class McVersionLookup {
 
 	protected static String getRelease(String version) {
 		if (RELEASE_PATTERN.matcher(version).matches()) return version;
+		if (LONG_RELEASE_PATTERN.matcher(version).matches()) return version;
 
 		assert isProbableVersion(version);
 

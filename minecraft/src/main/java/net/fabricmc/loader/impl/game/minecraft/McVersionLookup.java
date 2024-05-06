@@ -160,6 +160,15 @@ public final class McVersionLookup {
 				}
 			}
 
+			entry = cp.getEntry("net/minecraft/core/Version.class");
+
+			if(entry != null) {
+				if(fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+					return;
+				}
+			}
+
+
 			// classic: version-like String constant used in Minecraft.init, Minecraft referenced by field in MinecraftApplet
 			String type;
 

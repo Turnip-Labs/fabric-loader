@@ -168,6 +168,13 @@ public final class McVersionLookup {
 				}
 			}
 
+			entry = cp.getEntry("net/minecraft/core/Global.class");
+
+			if(entry != null) {
+				if(fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+					return;
+				}
+			}
 
 			// classic: version-like String constant used in Minecraft.init, Minecraft referenced by field in MinecraftApplet
 			String type;
@@ -286,8 +293,6 @@ public final class McVersionLookup {
 	protected static String getRelease(String version) {
 		if (RELEASE_PATTERN.matcher(version).matches()) return version;
 		if (LONG_RELEASE_PATTERN.matcher(version).matches()) return version;
-
-		assert isProbableVersion(version);
 
 		int pos = version.indexOf("-pre");
 		if (pos >= 0) return version.substring(0, pos);

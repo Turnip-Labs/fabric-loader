@@ -58,10 +58,11 @@ public final class McVersionLookup {
 			+ "Inf?dev (0\\.31 )?\\d+(-\\d+)?|" // long indev/infdev names: Infdev 12345678-9
 			+ "(rd|inf)-\\d+|" // early rd-123, inf-123
 			+ "1\\.RV-Pre1|3D Shareware v1\\.34|23w13a_or_b|" // odd exceptions
+			+ "\\d+\\.\\d+(\\.\\d+)?(\\sINDEV)?|" //Development versions.
 			+ "(.*[Ee]xperimental [Ss]napshot )(\\d+)" // Experimental versions.
 			);
 	private static final Pattern RELEASE_PATTERN = Pattern.compile("\\d+\\.\\d+(\\.\\d+)?");
-	private static final Pattern LONG_RELEASE_PATTERN = Pattern.compile("v?\\d+\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?|");
+	private static final Pattern LONG_RELEASE_PATTERN = Pattern.compile("v?\\d+\\.\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?");
 	private static final Pattern PRE_RELEASE_PATTERN = Pattern.compile(".+(?:-pre| Pre-?[Rr]elease )(\\d.?+)");
 	private static final Pattern RELEASE_CANDIDATE_PATTERN = Pattern.compile(".+(?:-rc| [Rr]elease Candidate )(\\d+)");
 	private static final Pattern SNAPSHOT_PATTERN = Pattern.compile("(?:Snapshot )?(\\d+)w0?(0|[1-9]\\d*)([a-z])");
@@ -69,6 +70,7 @@ public final class McVersionLookup {
 	private static final Pattern BETA_PATTERN = Pattern.compile("(?:b|Beta v?)1\\.(\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?)");
 	private static final Pattern ALPHA_PATTERN = Pattern.compile("(?:a|Alpha v?)[01]\\.(\\d+(\\.\\d+)?[a-z]?(_\\d+)?[a-z]?)");
 	private static final Pattern INDEV_PATTERN = Pattern.compile("(?:inf-|Inf?dev )(?:0\\.31 )?(\\d+(-\\d+)?)");
+	private static final Pattern DEV_PATTERN = Pattern.compile("\\d+\\.\\d+(\\.\\d+)?(\\sINDEV)?");
 	private static final String STRING_DESC = "Ljava/lang/String;";
 
 	public static McVersion getVersion(List<Path> gameJars, String entrypointClass, String versionName) {
@@ -145,6 +147,10 @@ public final class McVersionLookup {
 			CpEntry entry = cp.getEntry("net/minecraft/client/Minecraft.class");
 
 			if (entry != null) {
+				if(fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+					return;
+				}
+
 				// version-like constant return value of a Minecraft method (obfuscated/unknown name)
 				if (fromAnalyzer(entry.getInputStream(), new MethodConstantRetVisitor(null), builder)) {
 					return;
@@ -293,6 +299,7 @@ public final class McVersionLookup {
 	protected static String getRelease(String version) {
 		if (RELEASE_PATTERN.matcher(version).matches()) return version;
 		if (LONG_RELEASE_PATTERN.matcher(version).matches()) return version;
+		if (DEV_PATTERN.matcher(version).matches()) return version;
 
 		int pos = version.indexOf("-pre");
 		if (pos >= 0) return version.substring(0, pos);

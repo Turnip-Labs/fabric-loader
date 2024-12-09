@@ -16,10 +16,14 @@
 
 package net.fabricmc.loader.impl.game.minecraft.patch;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import net.fabricmc.loader.impl.game.minecraft.applet.AppletLauncher;
 
@@ -460,12 +464,13 @@ public class EntrypointPatch extends GamePatch {
 				moveAfter(it, Opcodes.INVOKESPECIAL); /* Object.init */
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
 				it.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/fabricmc/loader/impl/game/minecraft/applet/AppletMain", "hookGameDir", "(Ljava/io/File;)Ljava/io/File;", false));
-				it.add(new FieldInsnNode(Opcodes.PUTSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
+				FieldInsnNode node = new FieldInsnNode(Opcodes.PUTSTATIC, gameClass.name, runDirectory.name, runDirectory.desc);
+				it.add(node);
 
 				it = gameMethod.instructions.iterator();
 
 				if (gameConstructor == gameMethod) {
-					moveBefore(it, Opcodes.RETURN);
+					moveBefore(it,Opcodes.IFEQ);
 				}
 
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
@@ -532,7 +537,7 @@ public class EntrypointPatch extends GamePatch {
 			classEmitter.accept(mainClass);
 		}
 
-		if (isApplet) {
+		if (isApplet || isDirect) {
 			Hooks.appletMainClass = entrypoint;
 		}
 	}

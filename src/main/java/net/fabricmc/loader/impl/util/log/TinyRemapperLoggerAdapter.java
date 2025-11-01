@@ -14,21 +14,32 @@
  * limitations under the License.
  */
 
-package net.fabricmc.loader.impl.launch.knot;
+package net.fabricmc.loader.impl.util.log;
 
-import java.util.Collection;
-import java.util.Collections;
+import net.fabricmc.tinyremapper.api.TrLogger;
 
-import org.spongepowered.asm.launch.platform.container.IContainerHandle;
+public final class TinyRemapperLoggerAdapter implements TrLogger {
+	private final LogCategory category;
 
-public class MixinContainerHandleMod implements IContainerHandle {
-	@Override
-	public String getAttribute(String name) {
-		return null;
+	public TinyRemapperLoggerAdapter(LogCategory category) {
+		this.category = category;
 	}
 
 	@Override
-	public Collection<IContainerHandle> getNestedContainers() {
-		return Collections.emptyList();
+	public void log(Level level, String message) {
+		switch (level) {
+		case ERROR:
+			Log.error(category, message);
+			break;
+		case WARN:
+			Log.warn(category, message);
+			break;
+		case INFO:
+			Log.info(category, message);
+			break;
+		case DEBUG:
+			Log.debug(category, message);
+			break;
+		}
 	}
 }

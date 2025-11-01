@@ -63,21 +63,22 @@ public final class FabricMixinBootstrap {
 		if (FabricLauncherBase.getLauncher().isDevelopment()) {
 			MappingConfiguration mappingConfiguration = FabricLauncherBase.getLauncher().getMappingConfiguration();
 			MappingTree mappings = mappingConfiguration.getMappings();
+			final String modNs = MappingConfiguration.INTERMEDIARY_NAMESPACE;
+			String runtimeNs = mappingConfiguration.getRuntimeNamespace();
 
-			if (mappings != null) {
+			if (mappings != null && !modNs.equals(runtimeNs)) {
 				List<String> namespaces = new ArrayList<>(mappings.getDstNamespaces());
 				namespaces.add(mappings.getSrcNamespace());
 
-				if (namespaces.contains("intermediary") && namespaces.contains(mappingConfiguration.getTargetNamespace())) {
+				if (namespaces.contains(modNs) && namespaces.contains(runtimeNs)) {
 					System.setProperty("mixin.env.remapRefMap", "true");
 
 					try {
-						MixinIntermediaryDevRemapper remapper = new MixinIntermediaryDevRemapper(mappings, "intermediary", mappingConfiguration.getTargetNamespace());
+						MixinIntermediaryDevRemapper remapper = new MixinIntermediaryDevRemapper(mappings, modNs, runtimeNs);
 						MixinEnvironment.getDefaultEnvironment().getRemappers().add(remapper);
 						Log.info(LogCategory.MIXIN, "Loaded Fabric development mappings for mixin remapper!");
 					} catch (Exception e) {
-						Log.error(LogCategory.MIXIN, "Fabric development environment setup error - the game will probably crash soon!");
-						e.printStackTrace();
+						Log.error(LogCategory.MIXIN, "Fabric development environment setup error - the game will probably crash soon!", e);
 					}
 				}
 			}
@@ -93,7 +94,7 @@ public final class FabricMixinBootstrap {
 				try {
 					Mixins.addConfiguration(config);
 				} catch (Throwable t) {
-					throw new RuntimeException(String.format("Error creating Mixin config %s for mod %s", config, mod.getMetadata().getId()), t);
+					throw new RuntimeException(String.format("Error parsing or using Mixin config %s for mod %s", config, mod.getMetadata().getId()), t);
 				}
 			}
 		}
@@ -120,7 +121,8 @@ public final class FabricMixinBootstrap {
 			// maximum loader version and bundled fabric mixin version, DESCENDING ORDER, LATEST FIRST
 			// loader versions with new mixin versions need to be added here
 
-			// addVersion("0.13", FabricUtil.COMPATIBILITY_0_11_0); // example for next entry (latest first!)
+			addVersion("0.17.3", FabricUtil.COMPATIBILITY_0_16_5);
+			addVersion("0.16.0", FabricUtil.COMPATIBILITY_0_14_0);
 			addVersion("0.12.0-", FabricUtil.COMPATIBILITY_0_10_0);
 		}
 
@@ -159,8 +161,6 @@ public final class FabricMixinBootstrap {
 				for (LoaderMixinVersionEntry version : versions) {
 					if (minLoaderVersion.compareTo(version.loaderVersion) >= 0) { // lower bound is >= current version
 						return version.mixinVersion;
-					} else {
-						break;
 					}
 				}
 			}

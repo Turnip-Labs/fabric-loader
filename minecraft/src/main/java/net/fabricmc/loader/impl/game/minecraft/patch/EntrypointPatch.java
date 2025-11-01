@@ -50,11 +50,11 @@ import net.fabricmc.loader.impl.game.patch.GamePatch;
 import net.fabricmc.loader.impl.launch.FabricLauncher;
 import net.fabricmc.loader.impl.util.log.Log;
 import net.fabricmc.loader.impl.util.log.LogCategory;
-import net.fabricmc.loader.impl.util.version.VersionParser;
 import net.fabricmc.loader.impl.util.version.VersionPredicateParser;
 
 public class EntrypointPatch extends GamePatch {
 	private static final VersionPredicate VERSION_1_19_4 = createVersionPredicate(">=1.19.4-");
+	private static final VersionPredicate VERSION_25w14craftmine = createVersionPredicate("1.21.6-alpha.25.14.craftmine");
 
 	private final MinecraftGameProvider gameProvider;
 
@@ -90,6 +90,7 @@ public class EntrypointPatch extends GamePatch {
 		// Main -> Game entrypoint search
 		//
 		// -- CLIENT --
+		// pre-classic: find init() invocation before "Failed to start RubyDung" log message
 		// pre-1.6 (seems to hold to 0.0.11!): find the only non-static non-java-packaged Object field
 		// 1.6.1+: [client].start() [INVOKEVIRTUAL]
 		// 19w04a: [client].<init> [INVOKESPECIAL] -> Thread.start()
@@ -220,6 +221,62 @@ public class EntrypointPatch extends GamePatch {
 					}
 				}
 
+				if (type == EnvType.CLIENT && !isApplet && gmCandidate.name.equals("run")) {
+					// For pre-classic, try to find the "Failed to start RubyDung" log message
+					// that is shown if the init() method throws an exception, then patch said
+					// init() method.
+
+					MethodInsnNode potentialInitInsn = null;
+					boolean hasFailedToStartLog = false;
+
+					for (AbstractInsnNode insn : gmCandidate.instructions) {
+						if (insn instanceof MethodInsnNode && potentialInitInsn == null) {
+							MethodInsnNode methodInsn = (MethodInsnNode) insn;
+
+							if (methodInsn.getOpcode() == Opcodes.INVOKEVIRTUAL && methodInsn.owner.equals(gameClass.name)) {
+								potentialInitInsn = methodInsn;
+							} else {
+								// first method insn is not init(), this is not pre-classic!
+								break;
+							}
+						}
+
+						if (insn instanceof LdcInsnNode && !hasFailedToStartLog) {
+							if (potentialInitInsn == null) {
+								// found LDC before init() invocation, this is not pre-classic!
+								break;
+							}
+
+							Object cst = ((LdcInsnNode) insn).cst;
+
+							if (cst instanceof String) {
+								String s = (String) cst;
+
+								if (s.equals("Failed to start RubyDung")) {
+									hasFailedToStartLog = true;
+								}
+							}
+
+							if (!hasFailedToStartLog) {
+								// first LDC insn is not the expected log message, this is not pre-classic!
+								break;
+							}
+						}
+
+						if (potentialInitInsn != null && hasFailedToStartLog) {
+							// found log message and init() invocation, now get the init() method node
+							for (MethodNode gm : gameClass.methods) {
+								if (gm.name.equals(potentialInitInsn.name) && gm.desc.equals(potentialInitInsn.desc)) {
+									gameMethod = gm;
+									gameMethodQuality = 2;
+
+									break;
+								}
+							}
+						}
+					}
+				}
+
 				if (type == EnvType.CLIENT && !isApplet && gameMethodQuality < 2) {
 					// Try to find a method with an LDC string "LWJGL Version: ".
 					// This is the "init()" method, or as of 19w38a is the constructor, or called somewhere in that vicinity,
@@ -316,7 +373,8 @@ public class EntrypointPatch extends GamePatch {
 				// If we do not find this, then we are certain this is 20w22a.
 				MethodNode serverStartMethod = findMethod(mainClass, method -> {
 					if ((method.access & Opcodes.ACC_SYNTHETIC) == 0 // reject non-synthetic
-							|| method.name.equals("main") && method.desc.equals("([Ljava/lang/String;)V")) { // reject main method (theoretically superfluous now)
+							|| method.name.equals("main") && method.desc.equals("([Ljava/lang/String;)V") // reject main method (theoretically superfluous now)
+							|| VERSION_25w14craftmine.test(gameVersion) && method.parameters.size() < 10) { // reject problematic extra methods
 						return false;
 					}
 
@@ -525,6 +583,17 @@ public class EntrypointPatch extends GamePatch {
 					break;
 				}
 			}
+
+			// TODO: better handling of run directory for pre-classic
+			if (!patched && gameMethod != gameConstructor) {
+				ListIterator<AbstractInsnNode> it = gameMethod.instructions.iterator();
+
+				it.add(new InsnNode(Opcodes.ACONST_NULL));
+				it.add(new VarInsnNode(Opcodes.ALOAD, 0));
+				finishEntrypoint(type, it);
+
+				patched = true;
+			}
 		}
 
 		if (!patched) {
@@ -583,7 +652,7 @@ public class EntrypointPatch extends GamePatch {
 
 	private Version getGameVersion() {
 		try {
-			return VersionParser.parse(gameProvider.getNormalizedGameVersion(),false);
+			return Version.parse(gameProvider.getNormalizedGameVersion());
 		} catch (VersionParsingException e) {
 			throw new RuntimeException(e);
 		}

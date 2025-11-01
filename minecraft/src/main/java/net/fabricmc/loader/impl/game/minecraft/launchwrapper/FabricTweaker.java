@@ -52,7 +52,6 @@ import net.fabricmc.loader.impl.game.minecraft.MinecraftGameProvider;
 import net.fabricmc.loader.impl.launch.FabricLauncherBase;
 import net.fabricmc.loader.impl.launch.FabricMixinBootstrap;
 import net.fabricmc.loader.impl.util.Arguments;
-import net.fabricmc.loader.impl.util.FileSystemUtil;
 import net.fabricmc.loader.impl.util.LoaderUtil;
 import net.fabricmc.loader.impl.util.ManifestUtil;
 import net.fabricmc.loader.impl.util.SystemProperties;
@@ -65,7 +64,6 @@ public abstract class FabricTweaker extends FabricLauncherBase implements ITweak
 	protected Arguments arguments;
 	private LaunchClassLoader launchClassLoader;
 	private final List<Path> classPath = new ArrayList<>();
-	private boolean isDevelopment;
 
 	@SuppressWarnings("unchecked")
 	private final boolean isPrimaryTweaker = ((List<ITweaker>) Launch.blackboard.get("Tweaks")).isEmpty();
@@ -73,12 +71,6 @@ public abstract class FabricTweaker extends FabricLauncherBase implements ITweak
 	@Override
 	public String getEntrypoint() {
 		return getLaunchTarget();
-	}
-
-	@Override
-	public String getTargetNamespace() {
-		// TODO: Won't work outside of Yarn
-		return isDevelopment ? "named" : "intermediary";
 	}
 
 	@Override
@@ -97,8 +89,7 @@ public abstract class FabricTweaker extends FabricLauncherBase implements ITweak
 
 	@Override
 	public void injectIntoClassLoader(LaunchClassLoader launchClassLoader) {
-		isDevelopment = Boolean.parseBoolean(System.getProperty(SystemProperties.DEVELOPMENT, "false"));
-		Launch.blackboard.put(SystemProperties.DEVELOPMENT, isDevelopment);
+		Launch.blackboard.put(SystemProperties.DEVELOPMENT, IS_DEVELOPMENT);
 		setProperties(Launch.blackboard);
 
 		this.launchClassLoader = launchClassLoader;
@@ -142,15 +133,14 @@ public abstract class FabricTweaker extends FabricLauncherBase implements ITweak
 
 		arguments = null;
 
-		provider.initialize(this);
-
 		FabricLoaderImpl loader = FabricLoaderImpl.INSTANCE;
 		loader.setGameProvider(provider);
+		provider.initialize(this);
 		loader.load();
 		loader.freeze();
 
 		launchClassLoader.registerTransformer(FabricClassTransformer.class.getName());
-		FabricLoaderImpl.INSTANCE.loadAccessWideners();
+		FabricLoaderImpl.INSTANCE.loadClassTweakers();
 
 		// Setup Mixin environment
 		MixinBootstrap.init();
@@ -237,13 +227,7 @@ public abstract class FabricTweaker extends FabricLauncherBase implements ITweak
 	@Override
 	public Manifest getManifest(Path originPath) {
 		try {
-			if (Files.isDirectory(originPath)) {
-				return ManifestUtil.readManifest(originPath);
-			} else {
-				try (FileSystemUtil.FileSystemDelegate jarFs = FileSystemUtil.getJarFileSystem(originPath, false)) {
-					return ManifestUtil.readManifest(jarFs.get().getRootDirectories().iterator().next());
-				}
-			}
+			return ManifestUtil.readManifest(originPath);
 		} catch (IOException e) {
 			Log.warn(LOG_CATEGORY, "Error reading Manifest", e);
 			return null;
@@ -301,10 +285,5 @@ public abstract class FabricTweaker extends FabricLauncherBase implements ITweak
 		}
 
 		return outputStream.toByteArray();
-	}
-
-	@Override
-	public boolean isDevelopment() {
-		return isDevelopment;
 	}
 }

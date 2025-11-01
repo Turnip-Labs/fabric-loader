@@ -50,8 +50,6 @@ import net.fabricmc.loader.impl.util.log.Log;
 import net.fabricmc.loader.impl.util.log.LogCategory;
 
 public final class Knot extends FabricLauncherBase {
-	private static final boolean IS_DEVELOPMENT = Boolean.parseBoolean(System.getProperty(SystemProperties.DEVELOPMENT, "false"));
-
 	protected Map<String, Object> properties = new HashMap<>();
 
 	private KnotClassLoaderInterface classLoader;
@@ -133,20 +131,18 @@ public final class Knot extends FabricLauncherBase {
 
 		// Setup classloader
 		// TODO: Provide KnotCompatibilityClassLoader in non-exclusive-Fabric pre-1.13 environments?
-		boolean useCompatibility = provider.requiresUrlClassLoader() || Boolean.parseBoolean(System.getProperty("fabric.loader.useCompatibilityClassLoader", "false"));
+		boolean useCompatibility = provider.requiresUrlClassLoader() || SystemProperties.isSet(SystemProperties.USE_COMPAT_CL);
 		classLoader = KnotClassLoaderInterface.create(useCompatibility, isDevelopment(), envType, provider);
 		ClassLoader cl = classLoader.getClassLoader();
-
-		provider.initialize(this);
-
 		Thread.currentThread().setContextClassLoader(cl);
 
 		FabricLoaderImpl loader = FabricLoaderImpl.INSTANCE;
 		loader.setGameProvider(provider);
+		provider.initialize(this);
 		loader.load();
 		loader.freeze();
 
-		FabricLoaderImpl.INSTANCE.loadAccessWideners();
+		FabricLoaderImpl.INSTANCE.loadClassTweakers();
 
 		FabricMixinBootstrap.init(getEnvironmentType(), loader);
 		FabricLauncherBase.finishMixinBootstrapping();
@@ -255,12 +251,6 @@ public final class Knot extends FabricLauncherBase {
 	}
 
 	@Override
-	public String getTargetNamespace() {
-		// TODO: Won't work outside of Yarn
-		return IS_DEVELOPMENT ? "named" : "intermediary";
-	}
-
-	@Override
 	public List<Path> getClassPath() {
 		return classPath;
 	}
@@ -327,11 +317,6 @@ public final class Knot extends FabricLauncherBase {
 	}
 
 	@Override
-	public boolean isDevelopment() {
-		return IS_DEVELOPMENT;
-	}
-
-	@Override
 	public String getEntrypoint() {
 		return provider.getEntrypoint();
 	}
@@ -342,9 +327,6 @@ public final class Knot extends FabricLauncherBase {
 
 	static {
 		LoaderUtil.verifyNotInTargetCl(Knot.class);
-
-		if (IS_DEVELOPMENT) {
-			LoaderUtil.verifyClasspath();
-		}
+		LoaderUtil.verifyClasspath();
 	}
 }

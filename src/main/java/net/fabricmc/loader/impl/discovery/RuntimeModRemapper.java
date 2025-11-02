@@ -39,33 +39,37 @@ import java.util.stream.Collectors;
 
 import org.objectweb.asm.commons.Remapper;
 
-import net.fabricmc.accesswidener.AccessWidenerReader;
-import net.fabricmc.accesswidener.AccessWidenerRemapper;
-import net.fabricmc.accesswidener.AccessWidenerWriter;
+import net.fabricmc.classtweaker.api.ClassTweaker;
+import net.fabricmc.classtweaker.api.ClassTweakerReader;
+import net.fabricmc.classtweaker.api.ClassTweakerWriter;
+import net.fabricmc.classtweaker.visitors.ClassTweakerRemapperVisitor;
+import net.fabricmc.loader.impl.FabricLoaderImpl;
 import net.fabricmc.loader.impl.FormattedException;
 import net.fabricmc.loader.impl.launch.FabricLauncher;
 import net.fabricmc.loader.impl.launch.FabricLauncherBase;
+import net.fabricmc.loader.impl.launch.MappingConfiguration;
 import net.fabricmc.loader.impl.util.FileSystemUtil;
 import net.fabricmc.loader.impl.util.ManifestUtil;
 import net.fabricmc.loader.impl.util.SystemProperties;
 import net.fabricmc.loader.impl.util.log.Log;
 import net.fabricmc.loader.impl.util.log.LogCategory;
-import net.fabricmc.loader.impl.util.mappings.TinyRemapperMappingsHelper;
+import net.fabricmc.loader.impl.util.log.TinyRemapperLoggerAdapter;
 import net.fabricmc.tinyremapper.InputTag;
 import net.fabricmc.tinyremapper.NonClassCopyMode;
 import net.fabricmc.tinyremapper.OutputConsumerPath;
 import net.fabricmc.tinyremapper.TinyRemapper;
+import net.fabricmc.tinyremapper.TinyUtils;
 import net.fabricmc.tinyremapper.extension.mixin.MixinExtension;
 
 public final class RuntimeModRemapper {
 	private static final String REMAP_TYPE_MANIFEST_KEY = "Fabric-Loom-Mixin-Remap-Type";
 	private static final String REMAP_TYPE_STATIC = "static";
 
-	public static void remap(Collection<ModCandidate> modCandidates, Path tmpDir, Path outputDir) {
-		List<ModCandidate> modsToRemap = new ArrayList<>();
+	public static void remap(Collection<ModCandidateImpl> modCandidates, Path tmpDir, Path outputDir) {
+		List<ModCandidateImpl> modsToRemap = new ArrayList<>();
 		Set<InputTag> remapMixins = new HashSet<>();
 
-		for (ModCandidate mod : modCandidates) {
+		for (ModCandidateImpl mod : modCandidates) {
 			if (mod.getRequiresRemap()) {
 				modsToRemap.add(mod);
 			}
@@ -73,29 +77,24 @@ public final class RuntimeModRemapper {
 
 		if (modsToRemap.isEmpty()) return;
 
-		FabricLauncher launcher = FabricLauncherBase.getLauncher();
+		MappingConfiguration config = FabricLauncherBase.getLauncher().getMappingConfiguration();
+		String modNs = MappingConfiguration.INTERMEDIARY_NAMESPACE;
+		String runtimeNs = config.getRuntimeNamespace();
+		if (modNs.equals(runtimeNs)) return;
 
-		TinyRemapper remapper = TinyRemapper.newRemapper()
-				.withMappings(TinyRemapperMappingsHelper.create(launcher.getMappingConfiguration().getMappings(), "intermediary", launcher.getTargetNamespace()))
-				.renameInvalidLocals(false)
-				.extension(new MixinExtension(remapMixins::contains))
-				.build();
+		Map<ModCandidateImpl, RemapInfo> infoMap = new HashMap<>();
 
-		try {
-			remapper.readClassPathAsync(getRemapClasspath().toArray(new Path[0]));
-		} catch (IOException e) {
-			throw new RuntimeException("Failed to populate remap classpath", e);
-		}
-
-		Map<ModCandidate, RemapInfo> infoMap = new HashMap<>();
+		TinyRemapper remapper = null;
 
 		try {
-			for (ModCandidate mod : modsToRemap) {
+			FabricLauncher launcher = FabricLauncherBase.getLauncher();
+
+			ClassTweaker mergedClassTweaker = ClassTweaker.newInstance();
+			mergedClassTweaker.visitHeader(modNs);
+
+			for (ModCandidateImpl mod : modsToRemap) {
 				RemapInfo info = new RemapInfo();
 				infoMap.put(mod, info);
-
-				InputTag tag = remapper.createInputTag();
-				info.tag = tag;
 
 				if (mod.hasPath()) {
 					List<Path> paths = mod.getPaths();
@@ -107,18 +106,54 @@ public final class RuntimeModRemapper {
 					info.inputIsTemp = true;
 				}
 
+				info.outputPath = outputDir.resolve(mod.getDefaultFileName());
+				Files.deleteIfExists(info.outputPath);
+
+				String classTweaker = mod.getMetadata().getClassTweaker();
+
+				if (classTweaker != null) {
+					info.classTweakerPath = classTweaker;
+
+					try (FileSystemUtil.FileSystemDelegate jarFs = FileSystemUtil.getJarFileSystem(info.inputPath, false)) {
+						FileSystem fs = jarFs.get();
+						info.classTweaker = Files.readAllBytes(fs.getPath(classTweaker));
+					} catch (Throwable t) {
+						throw new RuntimeException("Error reading class tweaker for mod '" +mod.getId()+ "'!", t);
+					}
+
+					ClassTweakerReader.create(mergedClassTweaker).read(info.classTweaker, modNs);
+				}
+			}
+
+			remapper = TinyRemapper.newRemapper(new TinyRemapperLoggerAdapter(LogCategory.MOD_REMAP))
+					.withMappings(TinyUtils.createMappingProvider(launcher.getMappingConfiguration().getMappings(), modNs, runtimeNs))
+					.renameInvalidLocals(false)
+					.extension(new MixinExtension(remapMixins::contains))
+					.extraAnalyzeVisitor((mrjVersion, className, next) ->
+					mergedClassTweaker.createClassVisitor(FabricLoaderImpl.ASM_VERSION, next, null))
+					.build();
+
+			try {
+				remapper.readClassPathAsync(getRemapClasspath().toArray(new Path[0]));
+			} catch (IOException e) {
+				throw new RuntimeException("Failed to populate remap classpath", e);
+			}
+
+			for (ModCandidateImpl mod : modsToRemap) {
+				RemapInfo info = infoMap.get(mod);
+
+				InputTag tag = remapper.createInputTag();
+				info.tag = tag;
+
 				if (requiresMixinRemap(info.inputPath)) {
 					remapMixins.add(tag);
 				}
-
-				info.outputPath = outputDir.resolve(mod.getDefaultFileName());
-				Files.deleteIfExists(info.outputPath);
 
 				remapper.readInputsAsync(tag, info.inputPath);
 			}
 
 			//Done in a 2nd loop as we need to make sure all the inputs are present before remapping
-			for (ModCandidate mod : modsToRemap) {
+			for (ModCandidateImpl mod : modsToRemap) {
 				RemapInfo info = infoMap.get(mod);
 				OutputConsumerPath outputConsumer = new OutputConsumerPath.Builder(info.outputPath).build();
 
@@ -137,43 +172,36 @@ public final class RuntimeModRemapper {
 			}
 
 			//Done in a 3rd loop as this can happen when the remapper is doing its thing.
-			for (ModCandidate mod : modsToRemap) {
+			for (ModCandidateImpl mod : modsToRemap) {
 				RemapInfo info = infoMap.get(mod);
 
-				String accessWidener = mod.getMetadata().getAccessWidener();
-
-				if (accessWidener != null) {
-					info.accessWidenerPath = accessWidener;
-
-					try (FileSystemUtil.FileSystemDelegate jarFs = FileSystemUtil.getJarFileSystem(info.inputPath, false)) {
-						FileSystem fs = jarFs.get();
-						info.accessWidener = remapAccessWidener(Files.readAllBytes(fs.getPath(accessWidener)), remapper.getRemapper());
-					} catch (Throwable t) {
-						throw new RuntimeException("Error remapping access widener for mod '"+mod.getId()+"'!", t);
-					}
+				if (info.classTweaker != null) {
+					info.classTweaker = remapClassTweaker(info.classTweaker, remapper.getEnvironment().getRemapper(), modNs, runtimeNs);
 				}
 			}
 
 			remapper.finish();
 
-			for (ModCandidate mod : modsToRemap) {
+			for (ModCandidateImpl mod : modsToRemap) {
 				RemapInfo info = infoMap.get(mod);
 
 				info.outputConsumerPath.close();
 
-				if (info.accessWidenerPath != null) {
+				if (info.classTweakerPath != null) {
 					try (FileSystemUtil.FileSystemDelegate jarFs = FileSystemUtil.getJarFileSystem(info.outputPath, false)) {
 						FileSystem fs = jarFs.get();
 
-						Files.delete(fs.getPath(info.accessWidenerPath));
-						Files.write(fs.getPath(info.accessWidenerPath), info.accessWidener);
+						Files.delete(fs.getPath(info.classTweakerPath));
+						Files.write(fs.getPath(info.classTweakerPath), info.classTweaker);
 					}
 				}
 
 				mod.setPaths(Collections.singletonList(info.outputPath));
 			}
 		} catch (Throwable t) {
-			remapper.finish();
+			if (remapper != null) {
+				remapper.finish();
+			}
 
 			for (RemapInfo info : infoMap.values()) {
 				if (info.outputPath == null) {
@@ -199,12 +227,12 @@ public final class RuntimeModRemapper {
 		}
 	}
 
-	private static byte[] remapAccessWidener(byte[] input, Remapper remapper) {
-		AccessWidenerWriter writer = new AccessWidenerWriter();
-		AccessWidenerRemapper remappingDecorator = new AccessWidenerRemapper(writer, remapper, "intermediary", "named");
-		AccessWidenerReader accessWidenerReader = new AccessWidenerReader(remappingDecorator);
-		accessWidenerReader.read(input, "intermediary");
-		return writer.write();
+	private static byte[] remapClassTweaker(byte[] input, Remapper remapper, String modNs, String runtimeNs) {
+		ClassTweakerWriter writer = ClassTweakerWriter.create(ClassTweaker.CT_LATEST);
+		ClassTweakerRemapperVisitor remappingDecorator = new ClassTweakerRemapperVisitor(writer, remapper, modNs, runtimeNs);
+		ClassTweakerReader reader = ClassTweakerReader.create(remappingDecorator);
+		reader.read(input, modNs);
+		return writer.getOutput();
 	}
 
 	private static List<Path> getRemapClasspath() throws IOException {
@@ -221,9 +249,17 @@ public final class RuntimeModRemapper {
 				.collect(Collectors.toList());
 	}
 
+	/**
+	 * Determine whether a jar requires Mixin remapping with tiny remapper.
+	 *
+	 * <p>This is typically the case when a mod was built without the Mixin annotation processor generating refmaps.
+	 */
 	private static boolean requiresMixinRemap(Path inputPath) throws IOException, URISyntaxException {
-		final Manifest manifest = ManifestUtil.readManifest(inputPath.toUri().toURL());
+		final Manifest manifest = ManifestUtil.readManifest(inputPath);
+		if (manifest == null) return false;
+
 		final Attributes mainAttributes = manifest.getMainAttributes();
+
 		return REMAP_TYPE_STATIC.equalsIgnoreCase(mainAttributes.getValue(REMAP_TYPE_MANIFEST_KEY));
 	}
 
@@ -233,7 +269,7 @@ public final class RuntimeModRemapper {
 		Path outputPath;
 		boolean inputIsTemp;
 		OutputConsumerPath outputConsumerPath;
-		String accessWidenerPath;
-		byte[] accessWidener;
+		String classTweakerPath;
+		byte[] classTweaker;
 	}
 }

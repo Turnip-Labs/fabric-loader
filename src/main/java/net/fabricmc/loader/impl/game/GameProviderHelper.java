@@ -16,6 +16,8 @@
 
 package net.fabricmc.loader.impl.game;
 
+import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
@@ -35,6 +37,8 @@ import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.zip.ZipFile;
 
+import org.jetbrains.annotations.Nullable;
+
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.impl.FabricLoaderImpl;
 import net.fabricmc.loader.impl.FormattedException;
@@ -46,12 +50,13 @@ import net.fabricmc.loader.impl.util.UrlConversionException;
 import net.fabricmc.loader.impl.util.UrlUtil;
 import net.fabricmc.loader.impl.util.log.Log;
 import net.fabricmc.loader.impl.util.log.LogCategory;
-import net.fabricmc.loader.impl.util.mappings.TinyRemapperMappingsHelper;
+import net.fabricmc.loader.impl.util.log.TinyRemapperLoggerAdapter;
 import net.fabricmc.mappingio.tree.MappingTree;
 import net.fabricmc.tinyremapper.InputTag;
 import net.fabricmc.tinyremapper.NonClassCopyMode;
 import net.fabricmc.tinyremapper.OutputConsumerPath;
 import net.fabricmc.tinyremapper.TinyRemapper;
+import net.fabricmc.tinyremapper.TinyUtils;
 
 public final class GameProviderHelper {
 	private GameProviderHelper() { }
@@ -72,6 +77,53 @@ public final class GameProviderHelper {
 		if (!Files.exists(path)) throw new RuntimeException("Game jar "+path+" ("+LoaderUtil.normalizePath(path)+") configured through "+property+" system property doesn't exist");
 
 		return LoaderUtil.normalizeExistingPath(path);
+	}
+
+	public static @Nullable List<Path> getLibraries(String property) {
+		String value = System.getProperty(property);
+		if (value == null) return null;
+
+		List<Path> ret = new ArrayList<>();
+
+		for (String pathStr : value.split(File.pathSeparator)) {
+			if (pathStr.isEmpty()) continue;
+
+			if (pathStr.startsWith("@")) {
+				Path path = Paths.get(pathStr.substring(1));
+
+				if (!Files.isRegularFile(path)) {
+					Log.warn(LogCategory.GAME_PROVIDER, "Skipping missing/invalid library list file %s", path);
+					continue;
+				}
+
+				try (BufferedReader reader = Files.newBufferedReader(path)) {
+					String line;
+
+					while ((line = reader.readLine()) != null) {
+						line = line.trim();
+						if (line.isEmpty()) continue;
+
+						addLibrary(line, ret);
+					}
+				} catch (IOException e) {
+					throw new RuntimeException(String.format("Error reading library list file %s", path), e);
+				}
+			} else {
+				addLibrary(pathStr, ret);
+			}
+		}
+
+		return ret;
+	}
+
+	public static void addLibrary(String pathStr, List<Path> out) {
+		Path path = LoaderUtil.normalizePath(Paths.get(pathStr));
+
+		if (!Files.exists(path)) { // missing
+			Log.warn(LogCategory.GAME_PROVIDER, "Skipping missing library path %s", path);
+		} else {
+			out.add(path);
+		}
 	}
 
 	public static Optional<Path> getSource(ClassLoader loader, String filename) {
@@ -155,14 +207,15 @@ public final class GameProviderHelper {
 
 	private static boolean emittedInfo = false;
 
-	public static Map<String, Path> deobfuscate(Map<String, Path> inputFileMap, String gameId, String gameVersion, Path gameDir, FabricLauncher launcher) {
+	public static Map<String, Path> deobfuscate(Map<String, Path> inputFileMap, String sourceNamespace, String gameId, String gameVersion, Path gameDir, FabricLauncher launcher) {
 		Log.debug(LogCategory.GAME_REMAP, "Requesting deobfuscation of %s", inputFileMap);
 
-		if (launcher.isDevelopment()) { // in-dev is already deobfuscated
+		MappingConfiguration mappingConfig = launcher.getMappingConfiguration();
+		String targetNamespace = mappingConfig.getRuntimeNamespace();
+
+		if (sourceNamespace.equals(targetNamespace)) {
 			return inputFileMap;
 		}
-
-		MappingConfiguration mappingConfig = launcher.getMappingConfiguration();
 
 		if (!mappingConfig.matches(gameId, gameVersion)) {
 			String mappingsGameId = mappingConfig.getGameId();
@@ -176,15 +229,16 @@ public final class GameProviderHelper {
 							gameVersion));
 		}
 
-		String targetNamespace = mappingConfig.getTargetNamespace();
 		List<String> namespaces = mappingConfig.getNamespaces();
 
-		if (namespaces == null) {
+		if (namespaces == null
+				|| !namespaces.contains(sourceNamespace)
+				|| !namespaces.contains(targetNamespace)) {
 			Log.debug(LogCategory.GAME_REMAP, "No mappings, using input files");
 			return inputFileMap;
 		}
 
-		if (!namespaces.contains(targetNamespace)) {
+		if (!namespaces.contains(targetNamespace) || !namespaces.contains(sourceNamespace)) {
 			Log.debug(LogCategory.GAME_REMAP, "Missing namespace in mappings, using input files");
 			return inputFileMap;
 		}
@@ -239,7 +293,7 @@ public final class GameProviderHelper {
 
 		try {
 			Files.createDirectories(deobfJarDir);
-			deobfuscate0(inputFiles, outputFiles, tmpFiles, mappingConfig.getMappings(), targetNamespace, launcher);
+			deobfuscate0(inputFiles, outputFiles, tmpFiles, mappingConfig.getMappings(), sourceNamespace, targetNamespace, launcher);
 		} catch (IOException e) {
 			throw new RuntimeException("error remapping game jars "+inputFiles, e);
 		}
@@ -266,17 +320,16 @@ public final class GameProviderHelper {
 		return ret.resolve(versionDirName.toString().replaceAll("[^\\w\\-\\. ]+", "_"));
 	}
 
-	private static void deobfuscate0(List<Path> inputFiles, List<Path> outputFiles, List<Path> tmpFiles, MappingTree mappings, String targetNamespace, FabricLauncher launcher) throws IOException {
-		String sidedOrigin = launcher.getEnvironmentType().name().toLowerCase();
-		String originNamespace = mappings.getDstNamespaces().contains(sidedOrigin) ? sidedOrigin : "official";
-		TinyRemapper remapper = TinyRemapper.newRemapper()
-				.withMappings(TinyRemapperMappingsHelper.create(mappings, originNamespace, targetNamespace))
+	private static void deobfuscate0(List<Path> inputFiles, List<Path> outputFiles, List<Path> tmpFiles,
+			MappingTree mappings, String sourceNamespace, String targetNamespace, FabricLauncher launcher) throws IOException {
+		TinyRemapper remapper = TinyRemapper.newRemapper(new TinyRemapperLoggerAdapter(LogCategory.GAME_REMAP))
+				.withMappings(TinyUtils.createMappingProvider(mappings, sourceNamespace, targetNamespace))
 				.rebuildSourceFilenames(true)
 				.build();
 
 		Set<Path> depPaths = new HashSet<>();
 
-		if (System.getProperty(SystemProperties.DEBUG_DEOBFUSCATE_WITH_CLASSPATH) != null) {
+		if (SystemProperties.isSet(SystemProperties.DEBUG_DEOBFUSCATE_WITH_CLASSPATH)) {
 			for (Path path : launcher.getClassPath()) {
 				if (!inputFiles.contains(path)) {
 					depPaths.add(path);

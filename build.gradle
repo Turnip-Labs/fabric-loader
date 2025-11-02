@@ -264,7 +264,7 @@ tasks.register('finalJar', Zip) {
 
 build.dependsOn finalJar
 
-tasks.withType(AbstractArchiveTask) {
+tasks.withType(AbstractArchiveTask).configureEach {
 	preserveFileTimestamps = false
 	reproducibleFileOrder = true
 }
@@ -350,7 +350,7 @@ allprojects {
 }
 
 // Causes more trouble than its worth
-tasks.withType(GenerateModuleMetadata) {
+tasks.withType(GenerateModuleMetadata).configureEach {
 	enabled = false
 }
 
@@ -406,7 +406,7 @@ publishing {
 	}
 }
 
-def getBranch() {
+static def getBranch() {
 	def ENV = System.getenv()
 	if (ENV.GITHUB_REF) {
 		def branch = ENV.GITHUB_REF
@@ -419,7 +419,8 @@ def getBranch() {
 import org.kohsuke.github.GHReleaseBuilder
 import org.kohsuke.github.GitHub
 
-task github(dependsOn: publish) {
+tasks.register('github') {
+	dependsOn publish
 	onlyIf {
 		ENV.GITHUB_TOKEN
 	}
@@ -439,7 +440,7 @@ task github(dependsOn: publish) {
 }
 
 // A task to ensure that the version being released has not already been released.
-task checkVersion {
+tasks.register('checkVersion') {
 	doFirst {
 		def xml = new URL("https://maven.thesignalumproject.net/infrastructure/net/fabricmc/fabric-loader/maven-metadata.xml").text
 		def metadata = new groovy.xml.XmlSlurper().parseText(xml)

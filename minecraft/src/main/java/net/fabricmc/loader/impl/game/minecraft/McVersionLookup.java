@@ -159,7 +159,7 @@ public final class McVersionLookup {
 			CpEntry entry = cp.getEntry("net/minecraft/client/Minecraft.class");
 
 			if (entry != null) {
-				if(fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+				if (fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
 					return;
 				}
 
@@ -168,7 +168,7 @@ public final class McVersionLookup {
 					return;
 				}
 
-				if (fromAnalyzer(entry.getInputStream(), new MethodConstantRetVisitor("getMinecraftVersion"), builder)){
+				if (fromAnalyzer(entry.getInputStream(), new MethodConstantRetVisitor("getMinecraftVersion"), builder)) {
 					return;
 				}
 
@@ -180,16 +180,16 @@ public final class McVersionLookup {
 
 			entry = cp.getEntry("net/minecraft/core/Version.class");
 
-			if(entry != null) {
-				if(fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+			if (entry != null) {
+				if (fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
 					return;
 				}
 			}
 
 			entry = cp.getEntry("net/minecraft/core/Global.class");
 
-			if(entry != null) {
-				if(fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
+			if (entry != null) {
+				if (fromAnalyzer(entry.getInputStream(), new FieldStringConstantVisitor("VERSION"), builder)) {
 					return;
 				}
 			}

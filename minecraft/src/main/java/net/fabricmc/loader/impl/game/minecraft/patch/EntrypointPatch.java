@@ -179,7 +179,7 @@ public class EntrypointPatch extends GamePatch {
 					serverHasFile = newGameInsn.desc.startsWith("(Ljava/io/File;");
 				}
 			}
-			if(gameEntrypoint == null && isDirect && type == EnvType.CLIENT) {
+			if (gameEntrypoint == null && isDirect && type == EnvType.CLIENT) {
 				gameEntrypoint = mainClass.name;
 			}
 		}
@@ -509,7 +509,7 @@ public class EntrypointPatch extends GamePatch {
 			} else {
 				// Indev and above.
 				ListIterator<AbstractInsnNode> it = gameConstructor.instructions.iterator();
-				if(isDirect) {
+				if (isDirect) {
 					// Bamboozle the AppletLauncher when there's no applet.
 					AppletLauncher.gameDir = gameProvider.getLaunchDirectory().toFile();
 				}

@@ -33,7 +33,7 @@ allprojects {
 	apply plugin: "com.diffplug.spotless"
 
 	def constantsSource = rootProject.file("src/main/java/net/fabricmc/loader/impl/FabricLoaderImpl.java").text
-	version = (constantsSource =~ /\s+VERSION\s*=\s*"(.*)";/)[0][1] + (ENV.GITHUB_ACTIONS ? "" : "" /*"+local"*/)
+	version = (constantsSource =~ /\s+VERSION\s*=\s*"(.*)";/)[0][1] + (ENV.GITHUB_ACTIONS ? "" : "")
 
 	repositories {
 		maven {
@@ -264,7 +264,7 @@ tasks.register('finalJar', Zip) {
 
 build.dependsOn finalJar
 
-tasks.withType(AbstractArchiveTask).configureEach {
+tasks.withType(AbstractArchiveTask) {
 	preserveFileTimestamps = false
 	reproducibleFileOrder = true
 }
@@ -350,7 +350,7 @@ allprojects {
 }
 
 // Causes more trouble than its worth
-tasks.withType(GenerateModuleMetadata).configureEach {
+tasks.withType(GenerateModuleMetadata) {
 	enabled = false
 }
 
@@ -406,7 +406,7 @@ publishing {
 	}
 }
 
-static def getBranch() {
+def getBranch() {
 	def ENV = System.getenv()
 	if (ENV.GITHUB_REF) {
 		def branch = ENV.GITHUB_REF
@@ -419,8 +419,7 @@ static def getBranch() {
 import org.kohsuke.github.GHReleaseBuilder
 import org.kohsuke.github.GitHub
 
-tasks.register('github') {
-	dependsOn publish
+task github(dependsOn: publish) {
 	onlyIf {
 		ENV.GITHUB_TOKEN
 	}
@@ -440,7 +439,7 @@ tasks.register('github') {
 }
 
 // A task to ensure that the version being released has not already been released.
-tasks.register('checkVersion') {
+task checkVersion {
 	doFirst {
 		def xml = new URL("https://maven.thesignalumproject.net/infrastructure/net/fabricmc/fabric-loader/maven-metadata.xml").text
 		def metadata = new groovy.xml.XmlSlurper().parseText(xml)

@@ -20,8 +20,6 @@ import java.io.IOException;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -317,22 +315,30 @@ public class MinecraftGameProvider implements GameProvider {
 	public void initialize(FabricLauncher launcher) {
 		launcher.setValidParentClassPath(validParentClassPath);
 
+		MappingConfiguration config = launcher.getMappingConfiguration();
+		String runtimeNs = config.getRuntimeNamespace();
 		String gameNs = System.getProperty(SystemProperties.GAME_MAPPING_NAMESPACE);
 
 		if (gameNs == null) {
-			List<String> mappingNamespaces;
+			gameNs = MappingConfiguration.OFFICIAL_NAMESPACE; // default
 
-			if (launcher.isDevelopment()) {
-				gameNs = MappingConfiguration.NAMED_NAMESPACE;
-			} else if ((mappingNamespaces = launcher.getMappingConfiguration().getNamespaces()) == null
-					|| mappingNamespaces.contains(MappingConfiguration.OFFICIAL_NAMESPACE)) {
-				gameNs = MappingConfiguration.OFFICIAL_NAMESPACE;
-			} else {
-				gameNs = envType == EnvType.CLIENT ? MappingConfiguration.CLIENT_OFFICIAL_NAMESPACE : MappingConfiguration.SERVER_OFFICIAL_NAMESPACE;
+			if (config.hasAnyMappings()) {
+				List<String> mappingNamespaces = config.getNamespaces();
+
+				if (mappingNamespaces != null) {
+					if (launcher.isDevelopment()
+							&& mappingNamespaces.contains(MappingConfiguration.NAMED_NAMESPACE)) { // dev with named (e.g. yarn)
+						gameNs = MappingConfiguration.NAMED_NAMESPACE;
+					} else if (!mappingNamespaces.contains(MappingConfiguration.OFFICIAL_NAMESPACE)) { // prod with old mc that didn't use the same mappings for client and server jars
+						gameNs = envType == EnvType.CLIENT ? MappingConfiguration.CLIENT_OFFICIAL_NAMESPACE : MappingConfiguration.SERVER_OFFICIAL_NAMESPACE;
+					}
+				}
 			}
 		}
 
-		if (!gameNs.equals(launcher.getMappingConfiguration().getRuntimeNamespace())) { // game is obfuscated / in another namespace -> remap
+		Log.debug(LogCategory.GAME_PROVIDER, "namespace detection result: game=%s runtime=%s mod-default=%s", gameNs, runtimeNs, config.getDefaultModDistributionNamespace());
+
+		if (!gameNs.equals(runtimeNs)) { // game is obfuscated / in another namespace -> remap
 			Map<String, Path> obfJars = new HashMap<>(3);
 			String[] names = new String[gameJars.size()];
 
@@ -495,7 +501,7 @@ public class MinecraftGameProvider implements GameProvider {
 			targetClass = "net.fabricmc.loader.impl.game.minecraft.applet.AppletMain";
 		}
 
-		Log.debug(LogCategory.GAME_PROVIDER, "Launch arguments: "+ Arrays.toString(arguments.toArray()));
+		Log.debug(LogCategory.GAME_PROVIDER, "Launch arguments: " + Arrays.toString(arguments.toArray()));
 
 		MethodHandle invoker;
 
@@ -507,7 +513,6 @@ public class MinecraftGameProvider implements GameProvider {
 		}
 
 		try {
-			//noinspection ConfusingArgumentToVarargsMethod
 			invoker.invokeExact(arguments.toArray());
 		} catch (Throwable t) {
 			throw FormattedException.ofLocalized("exception.minecraft.generic", t);

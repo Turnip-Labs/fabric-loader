@@ -179,6 +179,7 @@ public class EntrypointPatch extends GamePatch {
 					serverHasFile = newGameInsn.desc.startsWith("(Ljava/io/File;");
 				}
 			}
+
 			if (gameEntrypoint == null && isDirect && type == EnvType.CLIENT) {
 				gameEntrypoint = mainClass.name;
 			}
@@ -509,10 +510,12 @@ public class EntrypointPatch extends GamePatch {
 			} else {
 				// Indev and above.
 				ListIterator<AbstractInsnNode> it = gameConstructor.instructions.iterator();
+
 				if (isDirect) {
 					// Bamboozle the AppletLauncher when there's no applet.
 					AppletLauncher.gameDir = gameProvider.getLaunchDirectory().toFile();
 				}
+
 				moveAfter(it, Opcodes.INVOKESPECIAL); /* Object.init */
 				it.add(new FieldInsnNode(Opcodes.GETSTATIC, gameClass.name, runDirectory.name, runDirectory.desc));
 				it.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/fabricmc/loader/impl/game/minecraft/applet/AppletMain", "hookGameDir", "(Ljava/io/File;)Ljava/io/File;", false));

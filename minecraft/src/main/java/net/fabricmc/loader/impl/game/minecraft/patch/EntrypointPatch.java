@@ -96,7 +96,11 @@ public class EntrypointPatch extends GamePatch {
 
 		boolean is20w22aServerOrHigher = false;
 
-		if (type == EnvType.CLIENT) {
+		if (isDirect && type == EnvType.CLIENT) {
+			gameEntrypoint = mainClass.name;
+		}
+
+		if (type == EnvType.CLIENT && gameEntrypoint == null) {
 			// pre-1.6 route
 			List<FieldNode> newGameFields = findFields(mainClass,
 					(f) -> !isStatic(f.access) && f.desc.startsWith("L") && !f.desc.startsWith("Ljava/")
@@ -178,10 +182,6 @@ public class EntrypointPatch extends GamePatch {
 					gameEntrypoint = newGameInsn.owner.replace('/', '.');
 					serverHasFile = newGameInsn.desc.startsWith("(Ljava/io/File;");
 				}
-			}
-
-			if (gameEntrypoint == null && isDirect && type == EnvType.CLIENT) {
-				gameEntrypoint = mainClass.name;
 			}
 		}
 
